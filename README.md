@@ -1,4 +1,5 @@
 _Installation_
+
 Sur une page quelconque, ajouter ce widget en tant que URL personnalisée ("Ajouter une vue à la page" => "Personnalisée" en sélectionnant n'importe quelle table puis choisir "URL personnalisée" et coller https://balludgom.github.io/Projet/widget.html dans le champ de saisie)
 
 Cela crée les tables suivantes avec toutes les colonnes nécessaires (on peut en rajouter si besoin) et les liens entre ces tables :
