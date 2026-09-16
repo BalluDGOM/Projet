@@ -1,1 +1,1285 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestion de projet — Widget Grist</title>
+<style>
+  :root{
+    --bg:#f4f6f8;
+    --surface:#ffffff;
+    --border:#dfe4ea;
+    --text:#1f2933;
+    --text-muted:#697586;
+    --primary:#2f5bea;
+    --primary-dark:#1e40c4;
+    --accent:#0f9d8f;
+    --danger:#d64545;
+    --warn:#e0a72c;
+    --radius:8px;
+    --shadow: 0 1px 2px rgba(20,30,50,.06), 0 1px 1px rgba(20,30,50,.04);
+    font-size:14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  #app{display:flex;flex-direction:column;height:100vh;}
+
+  header{display:flex;align-items:center;gap:16px;padding:10px 16px;background:var(--surface);
+    border-bottom:1px solid var(--border);flex-shrink:0;}
+  header h1{font-size:15px;font-weight:700;margin:0;color:var(--text);white-space:nowrap;}
+  .tab-bar{display:flex;gap:4px;flex:1;}
+  .tab-btn{border:none;background:transparent;padding:8px 14px;border-radius:6px;font-size:13.5px;
+    font-weight:600;color:var(--text-muted);cursor:pointer;}
+  .tab-btn:hover{background:#eef1f5;}
+  .tab-btn.active{background:var(--primary);color:#fff;}
+  .header-actions{display:flex;gap:8px;}
+  .icon-btn{border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:6px 10px;
+    font-size:12.5px;cursor:pointer;color:var(--text-muted);}
+  .icon-btn:hover{border-color:var(--primary);color:var(--primary);}
+
+  #status-bar{padding:6px 16px;font-size:12.5px;color:var(--text-muted);background:#fbfcfd;
+    border-bottom:1px solid var(--border);display:none;}
+  #status-bar.error{color:var(--danger);background:#fdeeee;display:block;}
+  #status-bar.info{display:block;}
+
+  main{flex:1;overflow:auto;padding:16px;}
+  .view{display:none;}
+  .view.active{display:block;}
+
+  /* ---------- Dashboard ---------- */
+  .stat-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;}
+  .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:14px 18px;min-width:140px;box-shadow:var(--shadow);}
+  .stat-card .num{font-size:26px;font-weight:700;line-height:1;}
+  .stat-card .label{font-size:12px;color:var(--text-muted);margin-top:6px;}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:16px;margin-bottom:16px;box-shadow:var(--shadow);}
+  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);
+    margin:0 0 12px;}
+  .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:12.5px;}
+  .bar-row .bar-label{width:110px;flex-shrink:0;color:var(--text-muted);}
+  .bar-track{flex:1;background:#eef1f5;border-radius:4px;height:14px;overflow:hidden;}
+  .bar-fill{height:100%;border-radius:4px;background:var(--primary);}
+  .bar-count{width:28px;text-align:right;font-weight:600;}
+  table.simple{width:100%;border-collapse:collapse;font-size:12.5px;}
+  table.simple th{text-align:left;color:var(--text-muted);font-weight:600;padding:6px 8px;
+    border-bottom:1px solid var(--border);}
+  table.simple td{padding:6px 8px;border-bottom:1px solid #eef1f5;}
+  .pill{display:inline-block;padding:2px 8px;border-radius:100px;font-size:11px;font-weight:600;color:#fff;}
+
+  /* ---------- Kanban ---------- */
+  .kanban-board{display:flex;gap:12px;align-items:flex-start;height:100%;}
+  .kanban-col{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    width:260px;flex-shrink:0;display:flex;flex-direction:column;max-height:calc(100vh - 150px);}
+  .kanban-col-head{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;
+    justify-content:space-between;align-items:center;font-weight:700;font-size:12.5px;}
+  .kanban-col-head .count{background:#eef1f5;color:var(--text-muted);border-radius:100px;
+    padding:1px 8px;font-size:11px;}
+  .kanban-col-body{flex:1;overflow-y:auto;padding:8px;min-height:60px;}
+  .kanban-col-body.drag-over{background:#eaf0ff;}
+  .kanban-col-add{border:none;background:transparent;color:var(--primary);font-size:12.5px;
+    font-weight:600;padding:8px 12px;text-align:left;cursor:pointer;border-top:1px solid var(--border);}
+  .kanban-col-add:hover{background:#eef1f5;}
+  .task-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;
+    margin-bottom:8px;cursor:grab;box-shadow:var(--shadow);}
+  .task-card:active{cursor:grabbing;}
+  .task-card.dragging{opacity:.4;}
+  .task-card .t-name{font-weight:600;font-size:12.8px;margin-bottom:4px;}
+  .task-card .t-meta{font-size:11px;color:var(--text-muted);display:flex;flex-wrap:wrap;gap:6px;}
+  .task-card .t-dep{font-size:10.5px;color:var(--primary);margin-top:4px;}
+  .task-card .t-users{margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;}
+  .avatar{width:19px;height:19px;border-radius:50%;background:var(--primary);color:#fff;
+    font-size:9.5px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+
+  /* ---------- Gantt ---------- */
+  .gantt-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+  .btn-primary{background:var(--primary);color:#fff;border:none;border-radius:6px;padding:8px 14px;
+    font-size:12.8px;font-weight:600;cursor:pointer;}
+  .btn-primary:hover{background:var(--primary-dark);}
+  .gantt-wrap{overflow-x:auto;background:var(--surface);border:1px solid var(--border);
+    border-radius:var(--radius);box-shadow:var(--shadow);}
+  .gantt-grid{display:grid;position:relative;}
+  .gantt-row-label{position:sticky;left:0;background:var(--surface);border-right:1px solid var(--border);
+    padding:4px 10px;font-size:12px;display:flex;flex-direction:column;justify-content:center;
+    white-space:nowrap;overflow:hidden;z-index:3;border-bottom:1px solid #eef1f5;box-sizing:border-box;}
+  .gantt-row-label .row-label-line{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .gantt-row-label .name-link{cursor:pointer;font-weight:600;}
+  .gantt-row-label .name-link:hover{text-decoration:underline;color:var(--primary);}
+  .gantt-row-label .dep{font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .gantt-header-cell{display:flex;align-items:center;justify-content:center;
+    border-bottom:2px solid var(--border);font-size:10.5px;color:var(--text-muted);
+    box-sizing:border-box;border-right:1px solid #f1f3f6;}
+  .gantt-legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-bottom:10px;font-size:11.5px;color:var(--text-muted);}
+  .gantt-legend-item{display:flex;align-items:center;gap:5px;}
+  .gantt-legend-dot{width:10px;height:10px;border-radius:3px;display:inline-block;flex-shrink:0;}
+  .gantt-header-cell.weekend{background:#f7f8fa;}
+  .gantt-cell{border-right:1px solid #f1f3f6;border-bottom:1px solid #eef1f5;cursor:pointer;box-sizing:border-box;}
+  .gantt-cell:hover{background:#eef1ff;}
+  .gantt-cell.weekend{background:#fafbfc;}
+  .gantt-links-svg{position:absolute;top:0;left:0;pointer-events:none;z-index:1;}
+  .gantt-bar{position:absolute;height:20px;border-radius:4px;top:6px;color:#fff;font-size:11px;
+    display:flex;align-items:center;overflow:hidden;cursor:grab;z-index:2;
+    box-shadow:0 1px 2px rgba(0,0,0,.2);}
+  .gantt-bar:active{cursor:grabbing;}
+  .gantt-bar.locked{cursor:not-allowed;opacity:.7;}
+  .gantt-bar .gantt-bar-label{pointer-events:none;white-space:nowrap;padding:0 8px;overflow:hidden;text-overflow:ellipsis;}
+  .gantt-bar .gantt-bar-handle{position:absolute;right:0;top:0;bottom:0;width:7px;
+    background:rgba(255,255,255,.35);cursor:ew-resize;}
+  .gantt-bar.locked .gantt-bar-handle{cursor:not-allowed;}
+  .gantt-today{position:absolute;top:0;bottom:0;width:2px;background:var(--danger);z-index:1;}
+
+  /* ---------- Modal ---------- */
+  .modal-overlay{position:fixed;inset:0;background:rgba(20,30,50,.35);display:flex;
+    align-items:center;justify-content:center;z-index:50;}
+  .modal-overlay.hidden{display:none;}
+  .modal{background:var(--surface);border-radius:10px;width:480px;max-width:92vw;max-height:90vh;
+    overflow-y:auto;padding:20px 22px;box-shadow:0 10px 30px rgba(20,30,50,.25);}
+  .modal h2{margin:0 0 14px;font-size:15px;}
+  .modal h3{margin:16px 0 8px;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;
+    color:var(--text-muted);border-top:1px solid var(--border);padding-top:12px;}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px;}
+  .field input[type=text],.field input[type=date],.field input[type=number],.field select{
+    width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:6px;font-size:13px;
+    font-family:inherit;background:#fff;}
+  .field-row{display:flex;gap:10px;}
+  .field-row .field{flex:1;}
+  .checklist{max-height:130px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:6px 8px;}
+  .checklist label{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:400;
+    color:var(--text);padding:3px 0;}
+  .modal-actions{display:flex;justify-content:space-between;margin-top:18px;}
+  .modal-actions .right{display:flex;gap:8px;}
+  .btn-secondary{background:#eef1f5;color:var(--text);border:none;border-radius:6px;padding:8px 14px;
+    font-size:12.8px;font-weight:600;cursor:pointer;}
+  .btn-danger{background:none;color:var(--danger);border:1px solid var(--danger);border-radius:6px;
+    padding:8px 14px;font-size:12.8px;font-weight:600;cursor:pointer;}
+  .hidden{display:none !important;}
+  .computed-box{background:#f2f6ff;border:1px solid #d7e2fb;border-radius:6px;padding:8px 10px;
+    font-size:12px;color:var(--primary-dark);margin-bottom:12px;}
+  .hint{font-size:11px;color:var(--text-muted);margin-top:4px;}
+
+  .empty-hint{color:var(--text-muted);font-size:12.5px;padding:16px;text-align:center;}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Gestion de projet</h1>
+    <div class="tab-bar">
+      <button class="tab-btn active" data-view="dashboard">Tableau de bord</button>
+      <button class="tab-btn" data-view="kanban">Kanban</button>
+      <button class="tab-btn" data-view="gantt">Gantt</button>
+    </div>
+    <div class="header-actions">
+      <button class="icon-btn" id="btn-refresh">↻ Actualiser</button>
+      <button class="icon-btn" id="btn-check-schema">⚙ Vérifier la structure</button>
+    </div>
+  </header>
+
+  <div id="status-bar"></div>
+
+  <main>
+    <section id="view-dashboard" class="view active"></section>
+    <section id="view-kanban" class="view"></section>
+    <section id="view-gantt" class="view"></section>
+  </main>
+</div>
+
+<div id="task-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <h2 id="modal-title">Nouvelle tâche</h2>
+
+    <div class="field">
+      <label>Nom de la tâche</label>
+      <input type="text" id="f-nom" placeholder="Ex. Rédiger le cahier des charges">
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Statut</label>
+        <select id="f-statut"></select>
+      </div>
+      <div class="field">
+        <label>Projet</label>
+        <select id="f-projet"><option value="0">— Aucun —</option></select>
+      </div>
+    </div>
+
+    <div id="f-computed-info" class="computed-box">Les dates seront calculées automatiquement après enregistrement.</div>
+
+    <h3>Dépendance envers d'autres tâches</h3>
+    <div class="field">
+      <label>Tâches prédécesseurs</label>
+      <div class="checklist" id="f-predecesseurs"></div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Type de lien</label>
+        <select id="f-type-dep"></select>
+      </div>
+      <div class="field" style="max-width:120px;">
+        <label>Décalage (j)</label>
+        <input type="number" id="f-decalage" value="0">
+      </div>
+    </div>
+
+    <h3>Dates / durée fixées (si pas de dépendance ci-dessus)</h3>
+    <div class="field-row">
+      <div class="field">
+        <label>Date de début fixée</label>
+        <input type="date" id="f-debut-fixe">
+      </div>
+      <div class="field">
+        <label>Date de fin fixée</label>
+        <input type="date" id="f-fin-fixe">
+      </div>
+      <div class="field" style="max-width:100px;">
+        <label>Durée fixée (j)</label>
+        <input type="number" id="f-duree-fixe" min="0">
+      </div>
+    </div>
+    <div class="hint" id="f-fixe-hint">Renseignez au maximum deux de ces trois valeurs : la troisième sera calculée automatiquement par Grist.</div>
+
+    <div class="field" style="margin-top:14px;">
+      <label>Utilisateurs affectés</label>
+      <div class="checklist" id="f-users"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-danger hidden" id="btn-delete">Supprimer</button>
+      <div class="right">
+        <button class="btn-secondary" id="btn-cancel">Annuler</button>
+        <button class="btn-primary" id="btn-save">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<script>
+(function(){
+"use strict";
+
+/* =========================================================================
+   SCHÉMA REQUIS
+   ========================================================================= */
+const STATUTS = ["À faire", "En cours", "En revue", "Terminé"];
+const STATUT_COLORS = {"À faire":"#7c8896","En cours":"#2f5bea","En revue":"#e0a72c","Terminé":"#0f9d8f"};
+
+// Palette de secours utilisée pour un projet qui n'a pas encore de couleur
+// renseignée dans sa colonne "Couleur" (table Projet).
+const PROJECT_PALETTE = ["#2f5bea","#0f9d8f","#e0a72c","#d64545","#8e44ad","#16a085","#e67e22","#34495e","#c0392b","#2980b9"];
+function projectColor(projId, projMap){
+  if(!projId) return "#9aa5b1"; // gris neutre : "sans projet"
+  const proj = projMap ? projMap[projId] : null;
+  if(proj && proj.Couleur) return proj.Couleur;
+  return PROJECT_PALETTE[projId % PROJECT_PALETTE.length];
+}
+
+// Types de dépendance entre tâches (Prédécesseur -> Tâche courante)
+const DEP_TYPES = ["Fin/Fin", "Début/Début", "Fin/Début", "Début/Fin"];
+const DEP_TYPE_LABELS = {
+  "Fin/Fin": "Fin/Fin (les deux tâches finissent ensemble)",
+  "Début/Début": "Début/Début (les deux tâches commencent ensemble)",
+  "Fin/Début": "Fin/Début (classique : je démarre quand le prédécesseur finit)",
+  "Début/Fin": "Début/Fin (je finis quand le prédécesseur démarre)"
+};
+
+// --- formules Grist (Python) pour les champs calculés de la table Tache ---
+const FORMULA_DUREE =
+"if $DureeFixe:\n" +
+"  return $DureeFixe\n" +
+"if $DateDebutFixe and $DateFinFixe:\n" +
+"  return ($DateFinFixe - $DateDebutFixe).days + 1\n" +
+"return None";
+
+const FORMULA_DATE_DEBUT =
+`import datetime
+
+dec = $DecalageJours or 0
+duree = $DureeFixe or $Duree or 1
+
+# Conversion propre des prédécesseurs en itérable
+preds = []
+if $Predecesseurs:
+    # Si c'est une RecordList (RefList), on itère dessus
+    # Sinon c'est un Record simple (Reference)
+    try:
+        preds = list($Predecesseurs)
+    except TypeError:
+        preds = [$Predecesseurs]
+
+dates_calculees = []
+
+for pred in preds:
+    # Sécurité : vérifie que 'pred' est bien un objet Record et pas une liste/vide
+    if not pred or isinstance(pred, (list, tuple)):
+        continue
+        
+    t = $TypeDependance
+
+    # 1. Début/Début
+    if t == "Début/Début" and pred.DateDebut:
+        dates_calculees.append(pred.DateDebut + datetime.timedelta(days=dec))
+
+    # 2. Fin/Début
+    elif t == "Fin/Début" and pred.DateFin:
+        dates_calculees.append(pred.DateFin + datetime.timedelta(days=dec + 1))
+
+    # 3. Fin/Fin
+    elif t == "Fin/Fin" and pred.DateFin:
+        date_fin_imposee = pred.DateFin - datetime.timedelta(days=dec)
+        dates_calculees.append(date_fin_imposee - datetime.timedelta(days=duree - 1))
+
+    # 4. Début/Fin
+    elif t == "Début/Fin" and pred.DateDebut:
+        date_fin_imposee = pred.DateDebut - datetime.timedelta(days=dec)
+        dates_calculees.append(date_fin_imposee - datetime.timedelta(days=duree - 1))
+
+# On retient la date la plus tardive (la plus contraignante)
+if dates_calculees:
+    return max(dates_calculees)
+
+# Fallbacks
+if $DateDebutFixe:
+    return $DateDebutFixe
+
+if $DateFinFixe and duree:
+    return $DateFinFixe - datetime.timedelta(days=duree - 1)
+
+return None`
+
+const FORMULA_DATE_FIN =
+`import datetime
+
+dec = $DecalageJours or 0
+duree = $DureeFixe or $Duree or 1
+
+# Conversion propre des prédécesseurs (RecordList ou Reference)
+preds = []
+if $Predecesseurs:
+    try:
+        preds = list($Predecesseurs)
+    except TypeError:
+        preds = [$Predecesseurs]
+
+dates_calculees = []
+
+for pred in preds:
+    if not pred or isinstance(pred, (list, tuple)):
+        continue
+        
+    t = $TypeDependance
+
+    # 1. Fin/Fin : La date de fin dépend de la fin du prédécesseur
+    if t == "Fin/Fin" and pred.DateFin:
+        dates_calculees.append(pred.DateFin + datetime.timedelta(days=dec))
+
+    # 2. Début/Fin : La date de fin dépend du début du prédécesseur
+    elif t == "Début/Fin" and pred.DateDebut:
+        dates_calculees.append(pred.DateDebut + datetime.timedelta(days=dec))
+
+    # 3. Fin/Début (si applicable) : Fin = Début du prédécesseur + décalage + durée
+    elif t == "Fin/Début" and pred.DateFin:
+        dates_calculees.append(pred.DateFin + datetime.timedelta(days=dec + duree))
+
+    # 4. Début/Début (si applicable) : Fin = Début du prédécesseur + décalage + durée - 1
+    elif t == "Début/Début" and pred.DateDebut:
+        dates_calculees.append(pred.DateDebut + datetime.timedelta(days=dec + duree - 1))
+
+# On retient la date de fin la plus tardive parmi tous les prédécesseurs
+if dates_calculees:
+    return max(dates_calculees)
+
+# Fallbacks si aucun prédécesseur valide
+if $DateFinFixe:
+    return $DateFinFixe
+
+if $DateDebut and duree:
+    return $DateDebut + datetime.timedelta(days=duree - 1)
+
+return None`
+
+// mapping colonne calculée -> colonne "fixée" correspondante (pour migration d'un ancien schéma)
+const FIXE_MAP = { DateDebut: "DateDebutFixe", DateFin: "DateFinFixe", Duree: "DureeFixe" };
+
+const SCHEMA = {
+  Entites: [
+    {id:"Nom", type:"Text", label:"Nom"},
+    {id:"Parent", type:"Ref:Entites", label:"Entité parente"}
+  ],
+  Utilisateurs: [
+    {id:"Nom", type:"Text", label:"Nom"},
+    {id:"Prenom", type:"Text", label:"Prénom"},
+    {id:"Email", type:"Text", label:"Email"},
+    {id:"Role", type:"Text", label:"Rôle"},
+    {id:"Permissions", type:"Text", label:"Permissions"},
+    {id:"Actif", type:"Bool", label:"Actif"},
+    {id:"Entite", type:"Ref:Entites", label:"Entité"}
+  ],
+  Projet: [
+    {id:"Nom", type:"Text", label:"Nom"},
+    {id:"Parent", type:"Ref:Projet", label:"Projet parent"},
+    {id:"Couleur", type:"Text", label:"Couleur (hex, ex. #2f5bea)"}
+  ],
+  Tache: [
+    {id:"Nom", type:"Text", label:"Nom"},
+    {id:"Statut", type:"Choice", label:"Statut Kanban",
+      widgetOptions: JSON.stringify({choices:STATUTS})},
+    // champs "fixés" saisis par l'utilisateur (ancrage manuel du planning)
+    {id:"DateDebutFixe", type:"Date", label:"Date de début (fixée)"},
+    {id:"DateFinFixe", type:"Date", label:"Date de fin (fixée)"},
+    {id:"DureeFixe", type:"Numeric", label:"Durée fixée (jours)"},
+    // dépendance entre tâches
+    {id:"Predecesseurs", type:"RefList:Tache", label:"Prédécesseurs"},
+    {id:"TypeDependance", type:"Choice", label:"Type de dépendance",
+      widgetOptions: JSON.stringify({choices:DEP_TYPES})},
+    {id:"DecalageJours", type:"Numeric", label:"Décalage (jours)"},
+    // liens
+    {id:"Projet", type:"Ref:Projet", label:"Projet"},
+    {id:"Utilisateurs", type:"RefList:Utilisateurs", label:"Utilisateurs"},
+    // champs calculés
+    {id:"DateDebut", type:"Date", label:"Date de début", formula:FORMULA_DATE_DEBUT},
+    {id:"DateFin", type:"Date", label:"Date de fin", formula:FORMULA_DATE_FIN},
+    {id:"Duree", type:"Numeric", label:"Durée (jours)", formula:FORMULA_DUREE}
+  ]
+};
+
+/* =========================================================================
+   ÉTAT
+   ========================================================================= */
+const state = { entites:[], utilisateurs:[], projets:[], taches:[] };
+let editingTaskId = null;
+let dragTaskId = null;
+let fixeEditOrder = [];
+const FIXE_FIELD_IDS = ["f-debut-fixe","f-fin-fixe","f-duree-fixe"];
+
+/* =========================================================================
+   OUTILS
+   ========================================================================= */
+function tableToRows(data){
+  const keys = Object.keys(data).filter(k=>k!=="id");
+  const rows = [];
+  for(let i=0;i<data.id.length;i++){
+    const row = {id:data.id[i]};
+    keys.forEach(k=>row[k]=data[k][i]);
+    rows.push(row);
+  }
+  return rows;
+}
+function normalizeRefList(v){
+  if(Array.isArray(v)){
+    if(v[0]==="L") return v.slice(1).filter(x=>typeof x==="number");
+    return v.filter(x=>typeof x==="number");
+  }
+  return [];
+}
+function dateToGrist(str){
+  if(!str) return null;
+  return Math.floor(new Date(str+"T00:00:00Z").getTime()/1000);
+}
+function gristToDateStr(v){
+  if(v===null || v===undefined || v===0 || v===false) return "";
+  return new Date(v*1000).toISOString().slice(0,10);
+}
+function addDays(dateStr, n){
+  const d = new Date(dateStr+"T00:00:00Z");
+  d.setUTCDate(d.getUTCDate()+n);
+  return d.toISOString().slice(0,10);
+}
+function daysBetween(a,b){
+  if(!a || !b) return null;
+  return Math.max(1, Math.round((new Date(b)-new Date(a))/86400000)+1);
+}
+function userLabel(u){
+  if(!u) return "?";
+  return ((u.Prenom||"")+" "+(u.Nom||"")).trim() || "(sans nom)";
+}
+function initials(u){
+  const l = userLabel(u).trim();
+  const parts = l.split(/\s+/);
+  return ((parts[0]||"")[0]||"").toUpperCase() + ((parts[1]||"")[0]||"").toUpperCase();
+}
+function byId(list){ const m={}; list.forEach(r=>m[r.id]=r); return m; }
+function escapeHtml(s){
+  return String(s===undefined||s===null?"":s).replace(/[&<>"']/g, c=>({
+    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+  }[c]));
+}
+function setStatus(msg, type){
+  const el = document.getElementById("status-bar");
+  el.textContent = msg;
+  el.className = type||"";
+  if(type==="info"){
+    setTimeout(()=>{ if(el.textContent===msg){ el.textContent=""; el.className=""; } }, 3500);
+  }
+}
+
+/* =========================================================================
+   VÉRIFICATION / CRÉATION DU SCHÉMA GRIST (+ migration des champs calculés)
+   ========================================================================= */
+function colInfo(c){
+  return {
+    type: c.type,
+    label: c.label,
+    ...(c.widgetOptions ? {widgetOptions:c.widgetOptions} : {}),
+    ...(c.formula !== undefined ? {isFormula:true, formula:c.formula} : {})
+  };
+}
+
+async function ensureSchema(){
+  setStatus("Vérification de la structure du document…", "info");
+  const [tablesMeta, colsMeta] = await Promise.all([
+    grist.docApi.fetchTable("_grist_Tables"),
+    grist.docApi.fetchTable("_grist_Tables_column")
+  ]);
+
+  const tableRowIdByName = {};
+  tablesMeta.tableId.forEach((name, i)=>{ tableRowIdByName[name] = tablesMeta.id[i]; });
+
+  const existingColsByTable = {}; // tableRowId -> Map(colId -> {isFormula, formula, type})
+  colsMeta.parentId.forEach((parentRowId, i)=>{
+    if(!existingColsByTable[parentRowId]) existingColsByTable[parentRowId] = new Map();
+    existingColsByTable[parentRowId].set(colsMeta.colId[i], {
+      isFormula: colsMeta.isFormula[i],
+      formula: colsMeta.formula[i],
+      type: colsMeta.type[i]
+    });
+  });
+
+  const addActions = [];
+  const convertActions = [];
+  const migrations = []; // {table, from, to} : recopier les anciennes valeurs avant conversion en formule
+
+  for(const tableName of Object.keys(SCHEMA)){
+    const cols = SCHEMA[tableName];
+    if(!(tableName in tableRowIdByName)){
+      addActions.push(["AddTable", tableName, cols.map(c=>({id:c.id, ...colInfo(c)}))]);
+      continue;
+    }
+    const rowId = tableRowIdByName[tableName];
+    const existing = existingColsByTable[rowId] || new Map();
+    cols.forEach(c=>{
+      if(!existing.has(c.id)){
+        addActions.push(["AddColumn", tableName, c.id, colInfo(c)]);
+      } else if(c.formula !== undefined){
+        const ex = existing.get(c.id);
+        if(!ex.isFormula){
+          if(FIXE_MAP[c.id]) migrations.push({table:tableName, from:c.id, to:FIXE_MAP[c.id]});
+          convertActions.push(["ModifyColumn", tableName, c.id, colInfo(c)]);
+        } else if(ex.formula !== c.formula || ex.type !== c.type){
+          convertActions.push(["ModifyColumn", tableName, c.id, colInfo(c)]);
+        }
+      } else {
+        // Colonne non calculée : on corrige aussi une dérive de type
+        // (ex. "Predecesseurs" qui doit être RefList:Tache et non Ref:Tache).
+        const ex = existing.get(c.id);
+        if(ex.type !== c.type){
+          convertActions.push(["ModifyColumn", tableName, c.id, colInfo(c)]);
+        }
+      }
+    });
+  }
+
+  if(addActions.length){
+    await grist.docApi.applyUserActions(addActions);
+  }
+
+  if(migrations.length){
+    const byTable = {};
+    migrations.forEach(m=>{ (byTable[m.table] = byTable[m.table]||[]).push(m); });
+    const bulkActions = [];
+    for(const tableName of Object.keys(byTable)){
+      const data = await grist.docApi.fetchTable(tableName);
+      byTable[tableName].forEach(m=>{
+        if(!data[m.from]) return;
+        const colValues = {};
+        colValues[m.to] = data[m.from];
+        bulkActions.push(["BulkUpdateRecord", tableName, data.id, colValues]);
+      });
+    }
+    if(bulkActions.length) await grist.docApi.applyUserActions(bulkActions);
+  }
+
+  if(convertActions.length){
+    await grist.docApi.applyUserActions(convertActions);
+  }
+
+  // Migration : d'anciennes versions de ce widget contenaient une erreur et
+  // écrivaient le prédécesseur dans une colonne "Predecesseur" (sans "s")
+  // au lieu de "Predecesseurs". Si cette ancienne colonne existe encore et
+  // contient des valeurs non reprises dans "Predecesseurs", on les recopie
+  // pour ne pas perdre les dépendances déjà saisies (et faire réapparaître
+  // les flèches correspondantes dans le Gantt).
+  let migratedPreds = 0;
+  if("Tache" in tableRowIdByName){
+    const tacheData = await grist.docApi.fetchTable("Tache");
+    if(tacheData.Predecesseur){
+      const rowIds = [];
+      const values = [];
+      tacheData.id.forEach((id, i)=>{
+        const oldVal = tacheData.Predecesseur[i];
+        const newVal = tacheData.Predecesseurs ? normalizeRefList(tacheData.Predecesseurs[i]) : [];
+        if(oldVal && newVal.length===0){
+          rowIds.push(id);
+          values.push(["L", oldVal]);
+        }
+      });
+      if(rowIds.length){
+        await grist.docApi.applyUserActions([["BulkUpdateRecord","Tache",rowIds,{Predecesseurs:values}]]);
+        migratedPreds = rowIds.length;
+      }
+    }
+  }
+
+  const total = addActions.length + convertActions.length;
+  const parts = [];
+  if(total) parts.push(total+" élément(s) de structure créé(s)/mis à jour");
+  if(migratedPreds) parts.push(migratedPreds+" dépendance(s) migrée(s) depuis l'ancienne colonne");
+  setStatus(parts.length ? parts.join(" — ")+"." : "Structure du document conforme.", "info");
+}
+
+/* =========================================================================
+   CHARGEMENT DES DONNÉES
+   ========================================================================= */
+async function fetchAllData(){
+  const [ent, usr, prj, tsk] = await Promise.all([
+    grist.docApi.fetchTable("Entites"),
+    grist.docApi.fetchTable("Utilisateurs"),
+    grist.docApi.fetchTable("Projet"),
+    grist.docApi.fetchTable("Tache")
+  ]);
+  state.entites = tableToRows(ent);
+  state.utilisateurs = tableToRows(usr);
+  state.projets = tableToRows(prj);
+  state.taches = tableToRows(tsk).map(t=>({
+    ...t,
+    Utilisateurs: normalizeRefList(t.Utilisateurs),
+    Predecesseurs: normalizeRefList(t.Predecesseurs)
+  }));
+}
+
+function renderAll(){
+  renderDashboard();
+  renderKanban();
+  renderGantt();
+}
+
+/* =========================================================================
+   TABLEAU DE BORD
+   ========================================================================= */
+function renderDashboard(){
+  const el = document.getElementById("view-dashboard");
+  const total = state.taches.length;
+  const today = new Date().toISOString().slice(0,10);
+  const overdue = state.taches.filter(t=>{
+    const fin = gristToDateStr(t.DateFin);
+    return fin && fin < today && t.Statut !== "Terminé";
+  }).length;
+  const activeUsers = state.utilisateurs.filter(u=>u.Actif).length;
+
+  const countsByStatus = {};
+  STATUTS.forEach(s=>countsByStatus[s]=0);
+  state.taches.forEach(t=>{ if(countsByStatus[t.Statut]===undefined) countsByStatus[t.Statut]=0; countsByStatus[t.Statut]++; });
+  const maxCount = Math.max(1, ...Object.values(countsByStatus));
+
+  const projMap = byId(state.projets);
+  const countsByProject = {};
+  state.taches.forEach(t=>{
+    const key = t.Projet && projMap[t.Projet] ? projMap[t.Projet].Nom : "(sans projet)";
+    countsByProject[key] = (countsByProject[key]||0)+1;
+  });
+
+  const upcoming = state.taches
+    .filter(t=>t.Statut!=="Terminé")
+    .map(t=>({...t, _fin: gristToDateStr(t.DateFin)}))
+    .filter(t=>t._fin)
+    .sort((a,b)=>a._fin.localeCompare(b._fin))
+    .slice(0,8);
+
+  el.innerHTML = `
+    <div class="stat-row">
+      <div class="stat-card"><div class="num">${total}</div><div class="label">Tâches au total</div></div>
+      <div class="stat-card"><div class="num">${state.projets.length}</div><div class="label">Projets</div></div>
+      <div class="stat-card"><div class="num" style="color:${overdue?'var(--danger)':'inherit'}">${overdue}</div><div class="label">Tâches en retard</div></div>
+      <div class="stat-card"><div class="num">${activeUsers}</div><div class="label">Utilisateurs actifs</div></div>
+    </div>
+    <div class="panel">
+      <h2>Répartition par statut</h2>
+      ${STATUTS.map(s=>`
+        <div class="bar-row">
+          <div class="bar-label">${escapeHtml(s)}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${(countsByStatus[s]/maxCount*100).toFixed(0)}%;background:${STATUT_COLORS[s]||'var(--primary)'}"></div></div>
+          <div class="bar-count">${countsByStatus[s]}</div>
+        </div>`).join("")}
+    </div>
+    <div class="panel">
+      <h2>Tâches par projet</h2>
+      ${Object.keys(countsByProject).length===0 ? '<div class="empty-hint">Aucune tâche pour le moment.</div>' :
+        Object.entries(countsByProject).map(([name,count])=>`
+        <div class="bar-row">
+          <div class="bar-label">${escapeHtml(name)}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${(count/total*100||0).toFixed(0)}%"></div></div>
+          <div class="bar-count">${count}</div>
+        </div>`).join("")}
+    </div>
+    <div class="panel">
+      <h2>Prochaines échéances</h2>
+      ${upcoming.length===0 ? '<div class="empty-hint">Rien de planifié.</div>' : `
+      <table class="simple">
+        <thead><tr><th>Tâche</th><th>Projet</th><th>Échéance</th><th>Statut</th></tr></thead>
+        <tbody>
+        ${upcoming.map(t=>`
+          <tr>
+            <td>${escapeHtml(t.Nom)}</td>
+            <td>${escapeHtml(t.Projet && projMap[t.Projet] ? projMap[t.Projet].Nom : "—")}</td>
+            <td style="${t._fin<today?'color:var(--danger);font-weight:600;':''}">${t._fin}</td>
+            <td><span class="pill" style="background:${STATUT_COLORS[t.Statut]||'#888'}">${escapeHtml(t.Statut||"—")}</span></td>
+          </tr>`).join("")}
+        </tbody>
+      </table>`}
+    </div>
+  `;
+}
+
+/* =========================================================================
+   KANBAN
+   ========================================================================= */
+function renderKanban(){
+  const el = document.getElementById("view-kanban");
+  const usersMap = byId(state.utilisateurs);
+  const tasksMap = byId(state.taches);
+
+  el.innerHTML = `<div class="kanban-board">${STATUTS.map(statut=>{
+    const tasks = state.taches.filter(t=>t.Statut===statut);
+    return `
+    <div class="kanban-col" data-statut="${escapeHtml(statut)}">
+      <div class="kanban-col-head">
+        <span>${escapeHtml(statut)}</span>
+        <span class="count">${tasks.length}</span>
+      </div>
+      <div class="kanban-col-body" data-statut="${escapeHtml(statut)}">
+        ${tasks.map(t=>renderTaskCard(t, usersMap, tasksMap)).join("")}
+      </div>
+      <button class="kanban-col-add" data-statut="${escapeHtml(statut)}">+ Ajouter une tâche</button>
+    </div>`;
+  }).join("")}</div>`;
+
+  el.querySelectorAll(".task-card").forEach(card=>{
+    card.addEventListener("dragstart", e=>{
+      dragTaskId = Number(card.dataset.id);
+      card.classList.add("dragging");
+      e.dataTransfer.setData("text/plain", String(dragTaskId));
+    });
+    card.addEventListener("dragend", ()=>card.classList.remove("dragging"));
+    card.addEventListener("click", ()=>openTaskModal(Number(card.dataset.id)));
+  });
+  el.querySelectorAll(".kanban-col-body").forEach(colBody=>{
+    colBody.addEventListener("dragover", e=>{ e.preventDefault(); colBody.classList.add("drag-over"); });
+    colBody.addEventListener("dragleave", ()=>colBody.classList.remove("drag-over"));
+    colBody.addEventListener("drop", async e=>{
+      e.preventDefault();
+      colBody.classList.remove("drag-over");
+      const newStatut = colBody.dataset.statut;
+      const id = Number(e.dataTransfer.getData("text/plain")) || dragTaskId;
+      if(id) await updateTaskStatus(id, newStatut);
+    });
+  });
+  el.querySelectorAll(".kanban-col-add").forEach(btn=>{
+    btn.addEventListener("click", ()=>openTaskModal(null, {Statut: btn.dataset.statut}));
+  });
+}
+
+function renderTaskCard(t, usersMap, tasksMap){
+  const dd = gristToDateStr(t.DateDebut), df = gristToDateStr(t.DateFin);
+  const preds = (t.Predecesseurs||[]).map(id=>tasksMap[id]).filter(Boolean);
+  return `
+  <div class="task-card" draggable="true" data-id="${t.id}">
+    <div class="t-name">${escapeHtml(t.Nom||"(sans nom)")}</div>
+    <div class="t-meta">
+      ${dd?`<span>▶ ${dd}</span>`:""}
+      ${df?`<span>■ ${df}</span>`:""}
+      ${t.Duree?`<span>${t.Duree} j</span>`:""}
+    </div>
+    ${preds.length?`<div class="t-dep">🔗 ${escapeHtml(t.TypeDependance||"")} — ${preds.map(p=>escapeHtml(p.Nom)).join(", ")}</div>`:""}
+    <div class="t-users">
+      ${(t.Utilisateurs||[]).map(uid=>{
+        const u = usersMap[uid];
+        return u ? `<span class="avatar" title="${escapeHtml(userLabel(u))}">${escapeHtml(initials(u))}</span>` : "";
+      }).join("")}
+    </div>
+  </div>`;
+}
+
+async function updateTaskStatus(taskId, statut){
+  try{
+    await grist.docApi.applyUserActions([["UpdateRecord","Tache",taskId,{Statut:statut}]]);
+    await fetchAllData();
+    renderAll();
+  }catch(e){ setStatus("Erreur : "+e.message, "error"); }
+}
+
+/* =========================================================================
+   GANTT
+   ========================================================================= */
+function renderGantt(){
+  const el = document.getElementById("view-gantt");
+  const projMap = byId(state.projets);
+  const tasksMap = byId(state.taches);
+  const tasksWithDates = state.taches
+    .map(t=>({...t, _d: gristToDateStr(t.DateDebut), _f: gristToDateStr(t.DateFin)}))
+    .filter(t=>t._d && t._f);
+
+  const legendItems = state.projets.length
+    ? state.projets.map(p=>`<span class="gantt-legend-item"><span class="gantt-legend-dot" style="background:${projectColor(p.id, projMap)}"></span>${escapeHtml(p.Nom)}</span>`).join("")
+      + `<span class="gantt-legend-item"><span class="gantt-legend-dot" style="background:${projectColor(0, projMap)}"></span>Sans projet</span>`
+    : "";
+
+  el.innerHTML = `
+    <div class="gantt-toolbar">
+      <div style="font-size:12.5px;color:var(--text-muted);">
+        ${tasksWithDates.length} tâche(s) planifiée(s) sur ${state.taches.length} au total —
+        glissez une barre pour la déplacer, ou son bord droit pour changer sa durée.
+      </div>
+      <button class="btn-primary" id="gantt-add-btn">+ Nouvelle tâche</button>
+    </div>
+    ${legendItems ? `<div class="gantt-legend">${legendItems}</div>` : ""}
+    <div class="gantt-wrap" id="gantt-wrap"></div>
+  `;
+  document.getElementById("gantt-add-btn").addEventListener("click", ()=>openTaskModal(null));
+
+  const wrap = document.getElementById("gantt-wrap");
+  if(tasksWithDates.length===0){
+    wrap.innerHTML = '<div class="empty-hint">Aucune tâche avec des dates calculées pour le moment (renseignez une date fixée ou un prédécesseur sur une tâche).</div>';
+    return;
+  }
+
+  let minDate = new Date(Math.min(...tasksWithDates.map(t=>new Date(t._d))));
+  let maxDate = new Date(Math.max(...tasksWithDates.map(t=>new Date(t._f))));
+  minDate.setDate(minDate.getDate()-1);
+  maxDate.setDate(maxDate.getDate()+2);
+  const dayMs = 86400000;
+  const totalDays = Math.max(1, Math.round((maxDate-minDate)/dayMs));
+  const dayWidth = 28;
+  const labelWidth = 200;
+  const rowHeight = 40; // hauteur fixe de chaque ligne (tâche + éventuelle dépendance)
+  const headerHeight = 26;
+  const barHeight = 20;
+  const barPadding = (rowHeight-barHeight)/2;
+  const minDateStr = minDate.toISOString().slice(0,10);
+
+  const days = [];
+  for(let i=0;i<totalDays;i++){
+    const d = new Date(minDate.getTime()+i*dayMs);
+    days.push(d);
+  }
+
+  let html = `<div class="gantt-grid" style="grid-template-columns:${labelWidth}px repeat(${totalDays}, ${dayWidth}px); grid-template-rows:${headerHeight}px repeat(${tasksWithDates.length}, ${rowHeight}px); width:${labelWidth+totalDays*dayWidth}px;">`;
+  html += `<div class="gantt-row-label" style="font-weight:700;height:${headerHeight}px;">Tâche</div>`;
+  days.forEach(d=>{
+    const isWeekend = d.getDay()===0 || d.getDay()===6;
+    html += `<div class="gantt-header-cell ${isWeekend?'weekend':''}" style="height:${headerHeight}px;">${d.getDate()}/${d.getMonth()+1}</div>`;
+  });
+  tasksWithDates.forEach(t=>{
+    const preds = (t.Predecesseurs||[]).map(id=>tasksMap[id]).filter(Boolean);
+    const color = projectColor(t.Projet, projMap);
+    html += `<div class="gantt-row-label" data-row-id="${t.id}" style="height:${rowHeight}px;border-left:4px solid ${color};">
+      <div class="row-label-line"><span class="name-link" data-id="${t.id}">${escapeHtml(t.Nom)}</span>${t.Projet && projMap[t.Projet] ? ' <span style="color:var(--text-muted);">· '+escapeHtml(projMap[t.Projet].Nom)+'</span>':''}</div>
+      ${preds.length?`<div class="dep">🔗 ${escapeHtml(t.TypeDependance||"")} ${preds.map(p=>escapeHtml(p.Nom)).join(", ")}</div>`:""}
+    </div>`;
+    days.forEach(d=>{
+      const isWeekend = d.getDay()===0 || d.getDay()===6;
+      const dStr = d.toISOString().slice(0,10);
+      html += `<div class="gantt-cell ${isWeekend?'weekend':''}" data-date="${dStr}" style="height:${rowHeight}px;"></div>`;
+    });
+  });
+  html += `</div>`;
+  wrap.innerHTML = html;
+
+  const grid = wrap.querySelector(".gantt-grid");
+  grid.style.position = "relative";
+  const gridHeight = headerHeight + rowHeight*tasksWithDates.length;
+  const gridWidth = labelWidth+totalDays*dayWidth;
+
+  // clic sur le nom de la tâche -> modifier
+  grid.querySelectorAll(".name-link").forEach(el2=>{
+    el2.addEventListener("click", ()=>openTaskModal(Number(el2.dataset.id)));
+  });
+
+  // clic sur une cellule vide -> créer une tâche démarrant ce jour-là
+  grid.querySelectorAll(".gantt-cell").forEach(cell=>{
+    cell.addEventListener("click", ()=>{
+      openTaskModal(null, {DateDebutFixe: cell.dataset.date});
+    });
+  });
+
+  // --- barres + interactions de glisser-déposer ---
+  const barPositions = {};
+  tasksWithDates.forEach((t, idx)=>{
+    const startOffsetDays = Math.round((new Date(t._d)-minDate)/dayMs);
+    const durDays = Math.max(1, Math.round((new Date(t._f)-new Date(t._d))/dayMs)+1);
+    const left = labelWidth + startOffsetDays*dayWidth;
+    const width = durDays*dayWidth-4;
+    const top = headerHeight + rowHeight*idx + barPadding;
+    barPositions[t.id] = {left, top, width, height:barHeight, rowIndex:idx};
+
+    const color = projectColor(t.Projet, projMap);
+    const hasPreds = Array.isArray(t.Predecesseurs) && t.Predecesseurs.length > 0;
+    const bar = document.createElement("div");
+    bar.className = "gantt-bar status-"+(t.Statut==="Terminé"?"done":"open") + (hasPreds ? " locked" : "");
+    bar.title = hasPreds
+      ? `${t.Nom} (${t._d} → ${t._f}) — ${t.Statut||""} — dépend de ${t.Predecesseurs.length} tâche(s) : retirez les liens pour déplacer manuellement.`
+      : `${t.Nom} (${t._d} → ${t._f}) — ${t.Statut||""}`;
+    bar.style.left = left+"px";
+    bar.style.width = width+"px";
+    bar.style.top = top+"px";
+    bar.style.background = color;
+    // le statut est indiqué par l'opacité/la bordure plutôt que par la couleur de fond,
+    // désormais réservée au projet
+    if(t.Statut==="Terminé") bar.style.opacity = "0.55";
+    bar.style.borderLeft = "3px solid " + (STATUT_COLORS[t.Statut] || "#7c8896");
+    bar.innerHTML = `<span class="gantt-bar-label">${escapeHtml(t.Nom)}</span><div class="gantt-bar-handle"></div>`;
+    grid.appendChild(bar);
+    wireBarInteractions(bar, t, dayWidth);
+  });
+
+  // --- liens de dépendance (SVG en fond) ---
+  const svgNs = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNs, "svg");
+  svg.setAttribute("class", "gantt-links-svg");
+  svg.setAttribute("width", gridWidth);
+  svg.setAttribute("height", gridHeight);
+  svg.innerHTML = `
+    <defs>
+      <marker id="gantt-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L6,3 L0,6 Z" fill="#8a94a6"></path>
+      </marker>
+    </defs>`;
+  tasksWithDates.forEach(t=>{
+    const predIds = Array.isArray(t.Predecesseurs) ? t.Predecesseurs : [];
+    const to = barPositions[t.id];
+    if(!to) return;
+    predIds.forEach(predId=>{
+      const from = barPositions[predId];
+      if(!from) return;
+      const type = t.TypeDependance || "Fin/Début";
+      let x1, x2;
+      if(type === "Début/Début"){ x1 = from.left; x2 = to.left; }
+      else if(type === "Fin/Fin"){ x1 = from.left+from.width; x2 = to.left+to.width; }
+      else if(type === "Début/Fin"){ x1 = from.left; x2 = to.left+to.width; }
+      else { x1 = from.left+from.width; x2 = to.left; } // Fin/Début (par défaut)
+      const y1 = from.top + from.height/2;
+      const y2 = to.top + to.height/2;
+      const midX = x1 + (x2-x1)/2;
+      const path = document.createElementNS(svgNs, "path");
+      path.setAttribute("d", `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`);
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", "#8a94a6");
+      path.setAttribute("stroke-width", "1.5");
+      path.setAttribute("marker-end", "url(#gantt-arrow)");
+      svg.appendChild(path);
+    });
+  });
+  grid.insertBefore(svg, grid.firstChild);
+
+  const todayOffset = Math.round((new Date(new Date().toISOString().slice(0,10))-minDate)/dayMs);
+  if(todayOffset>=0 && todayOffset<totalDays){
+    const marker = document.createElement("div");
+    marker.className = "gantt-today";
+    marker.style.left = (labelWidth+todayOffset*dayWidth)+"px";
+    marker.style.height = gridHeight+"px";
+    grid.appendChild(marker);
+  }
+
+  // --- création par glisser-déposer sur une plage vide : gérée via clic simple sur cellule ci-dessus ---
+
+  function wireBarInteractions(bar, t, dayWidth){
+    const locked = Array.isArray(t.Predecesseurs) && t.Predecesseurs.length > 0;
+    let mode = null, dragging = false, startX = 0, originLeft = 0, originWidth = 0;
+
+    function onMouseMove(e){
+      const dx = e.clientX - startX;
+      if(Math.abs(dx) > 3) dragging = true;
+      if(!dragging) return;
+      const deltaDays = Math.round(dx/dayWidth);
+      if(mode === "move"){
+        bar.style.left = (originLeft + deltaDays*dayWidth) + "px";
+      } else if(mode === "resize"){
+        const newWidth = Math.max(dayWidth-4, originWidth + deltaDays*dayWidth);
+        bar.style.width = newWidth + "px";
+      }
+    }
+
+    async function onMouseUp(e){
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      const dx = e.clientX - startX;
+      const wasDragging = dragging;
+      dragging = false;
+      const finishedMode = mode;
+      mode = null;
+      if(!wasDragging){
+        if(finishedMode === "move") openTaskModal(t.id);
+        return;
+      }
+      const deltaDays = Math.round(dx/dayWidth);
+      if(deltaDays === 0) return;
+      let newStart = t._d, newEnd = t._f;
+      if(finishedMode === "move"){
+        newStart = addDays(t._d, deltaDays);
+        newEnd = addDays(t._f, deltaDays);
+      } else {
+        newEnd = addDays(t._f, deltaDays);
+        if(newEnd < newStart) newEnd = newStart;
+      }
+      try{
+        await grist.docApi.applyUserActions([["UpdateRecord","Tache",t.id,{
+          DateDebutFixe: dateToGrist(newStart),
+          DateFinFixe: dateToGrist(newEnd),
+          DureeFixe: null
+        }]]);
+        await fetchAllData();
+        renderAll();
+        setStatus("Planification mise à jour.", "info");
+      }catch(err){
+        setStatus("Erreur : "+err.message, "error");
+        renderGantt();
+      }
+    }
+
+    bar.addEventListener("mousedown", e=>{
+      if(locked){
+        e.preventDefault();
+        setStatus("Cette tâche dépend d'une autre tâche : retirez le lien de dépendance pour la déplacer manuellement.", "error");
+        return;
+      }
+      e.preventDefault();
+      mode = e.target.classList.contains("gantt-bar-handle") ? "resize" : "move";
+      dragging = false;
+      startX = e.clientX;
+      originLeft = parseFloat(bar.style.left);
+      originWidth = parseFloat(bar.style.width);
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    });
+  }
+}
+
+/* =========================================================================
+   MODALE TÂCHE (création / modification)
+   ========================================================================= */
+function updateFixeHint(){
+  const filled = FIXE_FIELD_IDS.filter(id=>document.getElementById(id).value !== "");
+  const hint = document.getElementById("f-fixe-hint");
+  hint.textContent = filled.length >= 2
+    ? "Deux valeurs sont fixées ; la troisième est calculée automatiquement par Grist."
+    : "Renseignez au maximum deux de ces trois valeurs : la troisième sera calculée automatiquement par Grist.";
+}
+function handleFixeFieldInput(changedId){
+  fixeEditOrder = fixeEditOrder.filter(id=>id!==changedId);
+  fixeEditOrder.push(changedId);
+  const filled = FIXE_FIELD_IDS.filter(id=>document.getElementById(id).value !== "");
+  if(filled.length === 3){
+    const oldest = fixeEditOrder.find(id=>filled.includes(id));
+    if(oldest){
+      document.getElementById(oldest).value = "";
+      fixeEditOrder = fixeEditOrder.filter(id=>id!==oldest);
+    }
+  }
+  updateFixeHint();
+}
+
+function openTaskModal(taskId, defaults){
+  editingTaskId = taskId;
+  const t = taskId ? state.taches.find(x=>x.id===taskId) : null;
+  const d = defaults || {};
+  fixeEditOrder = [];
+
+  document.getElementById("modal-title").textContent = t ? "Modifier la tâche" : "Nouvelle tâche";
+  document.getElementById("f-nom").value = t ? (t.Nom||"") : (d.Nom||"");
+
+  const statutSel = document.getElementById("f-statut");
+  statutSel.innerHTML = STATUTS.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
+  statutSel.value = t ? (t.Statut||STATUTS[0]) : (d.Statut||STATUTS[0]);
+
+  const projSel = document.getElementById("f-projet");
+  projSel.innerHTML = '<option value="0">— Aucun —</option>' +
+    state.projets.map(p=>`<option value="${p.id}">${escapeHtml(p.Nom)}</option>`).join("");
+  projSel.value = t ? (t.Projet||0) : (d.Projet||0);
+
+  const selectedPreds = new Set(t ? (t.Predecesseurs||[]) : (d.Predecesseurs||[]));
+  const predsBox = document.getElementById("f-predecesseurs");
+  const predCandidates = state.taches.filter(x=>!t || x.id!==t.id);
+  predsBox.innerHTML = predCandidates.length ? predCandidates.map(x=>`
+    <label>
+      <input type="checkbox" value="${x.id}" ${selectedPreds.has(x.id)?"checked":""}>
+      ${escapeHtml(x.Nom)}
+    </label>`).join("") : '<div class="empty-hint">Aucune autre tâche disponible.</div>';
+
+  const typeDepSel = document.getElementById("f-type-dep");
+  typeDepSel.innerHTML = DEP_TYPES.map(dt=>`<option value="${escapeHtml(dt)}">${escapeHtml(DEP_TYPE_LABELS[dt]||dt)}</option>`).join("");
+  typeDepSel.value = t ? (t.TypeDependance||DEP_TYPES[2]) : (d.TypeDependance||DEP_TYPES[2]);
+
+  document.getElementById("f-decalage").value = t ? (t.DecalageJours||0) : (d.DecalageJours||0);
+
+  document.getElementById("f-debut-fixe").value = t ? gristToDateStr(t.DateDebutFixe) : (d.DateDebutFixe||"");
+  document.getElementById("f-fin-fixe").value = t ? gristToDateStr(t.DateFinFixe) : (d.DateFinFixe||"");
+  document.getElementById("f-duree-fixe").value = t ? (t.DureeFixe||"") : (d.DureeFixe||"");
+  updateFixeHint();
+
+  const infoBox = document.getElementById("f-computed-info");
+  if(t){
+    const dd = gristToDateStr(t.DateDebut) || "?";
+    const df = gristToDateStr(t.DateFin) || "?";
+    infoBox.textContent = `Calculé par Grist — Début : ${dd} · Fin : ${df} · Durée : ${t.Duree||"?"} j`;
+  } else {
+    infoBox.textContent = "Les dates et la durée seront calculées automatiquement par Grist après enregistrement (selon la dépendance ou les valeurs fixées).";
+  }
+
+  const selectedUsers = new Set(t ? (t.Utilisateurs||[]) : (d.Utilisateurs||[]));
+  const usersBox = document.getElementById("f-users");
+  usersBox.innerHTML = state.utilisateurs.length ? state.utilisateurs.map(u=>`
+    <label>
+      <input type="checkbox" value="${u.id}" ${selectedUsers.has(u.id)?"checked":""}>
+      ${escapeHtml(userLabel(u))}${u.Role?` <span style="color:var(--text-muted);">(${escapeHtml(u.Role)})</span>`:""}
+    </label>`).join("") : '<div class="empty-hint">Aucun utilisateur dans la table Utilisateurs.</div>';
+
+  document.getElementById("btn-delete").classList.toggle("hidden", !t);
+  document.getElementById("task-modal").classList.remove("hidden");
+}
+
+function closeTaskModal(){
+  document.getElementById("task-modal").classList.add("hidden");
+  editingTaskId = null;
+}
+
+async function saveTaskFromModal(){
+  const nom = document.getElementById("f-nom").value.trim();
+  if(!nom){ alert("Le nom de la tâche est obligatoire."); return; }
+  const statut = document.getElementById("f-statut").value;
+  const projet = Number(document.getElementById("f-projet").value) || 0;
+  const predecesseurs = Array.from(document.querySelectorAll("#f-predecesseurs input:checked")).map(cb=>Number(cb.value));
+  const typeDep = document.getElementById("f-type-dep").value;
+  const decalage = Number(document.getElementById("f-decalage").value) || 0;
+  let debutFixe = document.getElementById("f-debut-fixe").value;
+  let finFixe = document.getElementById("f-fin-fixe").value;
+  let dureeFixe = document.getElementById("f-duree-fixe").value;
+  const users = Array.from(document.querySelectorAll("#f-users input:checked")).map(cb=>Number(cb.value));
+
+  if(editingTaskId && predecesseurs.includes(editingTaskId)){
+    alert("Une tâche ne peut pas dépendre d'elle-même.");
+    return;
+  }
+
+  // garde-fou : au maximum deux des trois valeurs fixées peuvent être envoyées
+  const filledCount = [debutFixe, finFixe, dureeFixe].filter(v=>v!=="" && v!==null).length;
+  if(filledCount === 3){
+    dureeFixe = ""; // priorité aux deux dates
+  }
+
+  // Ne jamais écrire dans DateDebut / DateFin / Duree : ce sont des colonnes
+  // calculées (formule) côté Grist. On écrit uniquement les champs "Fixe"
+  // et les informations de dépendance ; Grist recalcule le reste.
+  const payload = {
+    Nom: nom,
+    Statut: statut,
+    Projet: projet,
+    Predecesseurs: ["L", ...predecesseurs],
+    TypeDependance: typeDep,
+    DecalageJours: decalage,
+    DateDebutFixe: dateToGrist(debutFixe),
+    DateFinFixe: dateToGrist(finFixe),
+    DureeFixe: dureeFixe ? Number(dureeFixe) : null,
+    Utilisateurs: ["L", ...users]
+  };
+
+  try{
+    if(editingTaskId){
+      await grist.docApi.applyUserActions([["UpdateRecord","Tache",editingTaskId,payload]]);
+    } else {
+      await grist.docApi.applyUserActions([["AddRecord","Tache",null,payload]]);
+    }
+    closeTaskModal();
+    await fetchAllData();
+    renderAll();
+    setStatus("Tâche enregistrée.", "info");
+  }catch(e){
+    setStatus("Erreur lors de l'enregistrement : "+e.message, "error");
+  }
+}
+
+async function deleteTaskFromModal(){
+  if(!editingTaskId) return;
+  if(!confirm("Supprimer définitivement cette tâche ? (les tâches qui en dépendent perdront leur lien de prédécesseur)")) return;
+  try{
+    await grist.docApi.applyUserActions([["RemoveRecord","Tache",editingTaskId]]);
+    closeTaskModal();
+    await fetchAllData();
+    renderAll();
+    setStatus("Tâche supprimée.", "info");
+  }catch(e){
+    setStatus("Erreur lors de la suppression : "+e.message, "error");
+  }
+}
+
+/* =========================================================================
+   NAVIGATION / ÉVÉNEMENTS GLOBAUX
+   ========================================================================= */
+function wireUi(){
+  document.querySelectorAll(".tab-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
+      document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("view-"+btn.dataset.view).classList.add("active");
+    });
+  });
+
+  document.getElementById("btn-refresh").addEventListener("click", async ()=>{
+    setStatus("Actualisation…", "info");
+    await fetchAllData();
+    renderAll();
+    setStatus("Données actualisées.", "info");
+  });
+
+  document.getElementById("btn-check-schema").addEventListener("click", async ()=>{
+    try{
+      await ensureSchema();
+      await fetchAllData();
+      renderAll();
+    }catch(e){ setStatus("Erreur : "+e.message, "error"); }
+  });
+
+  document.getElementById("btn-cancel").addEventListener("click", closeTaskModal);
+  document.getElementById("btn-save").addEventListener("click", saveTaskFromModal);
+  document.getElementById("btn-delete").addEventListener("click", deleteTaskFromModal);
+  document.getElementById("task-modal").addEventListener("click", e=>{
+    if(e.target.id==="task-modal") closeTaskModal();
+  });
+
+  FIXE_FIELD_IDS.forEach(id=>{
+    document.getElementById(id).addEventListener("input", ()=>handleFixeFieldInput(id));
+  });
+}
+
+/* =========================================================================
+   INITIALISATION
+   ========================================================================= */
+async function init(){
+  wireUi();
+  try{
+    grist.ready({ requiredAccess: "full" });
+    await ensureSchema();
+    await fetchAllData();
+    renderAll();
+  }catch(e){
+    setStatus("Erreur d'initialisation : "+e.message, "error");
+    console.error(e);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", init);
+})();
+</script>
+</body>
+</html>
 
