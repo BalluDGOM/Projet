@@ -101,12 +101,19 @@
     border-radius:var(--radius);box-shadow:var(--shadow);}
   .gantt-grid{display:grid;position:relative;}
   .gantt-row-label{position:sticky;left:0;background:var(--surface);border-right:1px solid var(--border);
-    padding:4px 10px;font-size:12px;display:flex;flex-direction:column;justify-content:center;
+    padding:4px 10px;font-size:12px;display:flex;flex-direction:row;align-items:center;gap:6px;
     white-space:nowrap;overflow:hidden;z-index:3;border-bottom:1px solid #eef1f5;box-sizing:border-box;}
+  .gantt-row-label .row-label-text{min-width:0;flex:1;display:flex;flex-direction:column;justify-content:center;overflow:hidden;}
   .gantt-row-label .row-label-line{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .gantt-row-label .name-link{cursor:pointer;font-weight:600;}
   .gantt-row-label .name-link:hover{text-decoration:underline;color:var(--primary);}
   .gantt-row-label .dep{font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .gantt-row-label .row-drag-handle{flex-shrink:0;cursor:grab;color:var(--text-muted);font-size:13px;
+    line-height:1;user-select:none;}
+  .gantt-row-label .row-drag-handle:active{cursor:grabbing;}
+  .gantt-row-label.dragging-row{opacity:.4;}
+  .gantt-row-label.drag-over-top{box-shadow:inset 0 3px 0 0 var(--primary);}
+  .gantt-row-label.drag-over-bottom{box-shadow:inset 0 -3px 0 0 var(--primary);}
   .gantt-header-cell{display:flex;align-items:center;justify-content:center;
     border-bottom:2px solid var(--border);font-size:10.5px;color:var(--text-muted);
     box-sizing:border-box;border-right:1px solid #f1f3f6;}
@@ -437,6 +444,8 @@ const SCHEMA = {
     // liens
     {id:"Projet", type:"Ref:Projet", label:"Projet"},
     {id:"Utilisateurs", type:"RefList:Utilisateurs", label:"Utilisateurs"},
+    // ordre d'affichage manuel (tri par glisser-déposer dans le Gantt)
+    {id:"Ordre", type:"Numeric", label:"Ordre d'affichage"},
     // champs calculés
     {id:"DateDebut", type:"Date", label:"Date de début", formula:FORMULA_DATE_DEBUT},
     {id:"DateFin", type:"Date", label:"Date de fin", formula:FORMULA_DATE_FIN},
@@ -500,6 +509,9 @@ function initials(u){
   return ((parts[0]||"")[0]||"").toUpperCase() + ((parts[1]||"")[0]||"").toUpperCase();
 }
 function byId(list){ const m={}; list.forEach(r=>m[r.id]=r); return m; }
+function orderValue(t){
+  return (t.Ordre===null || t.Ordre===undefined) ? t.id : t.Ordre;
+}
 function escapeHtml(s){
   return String(s===undefined||s===null?"":s).replace(/[&<>"']/g, c=>({
     "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
@@ -827,7 +839,8 @@ function renderGantt(){
   const tasksMap = byId(state.taches);
   const tasksWithDates = state.taches
     .map(t=>({...t, _d: gristToDateStr(t.DateDebut), _f: gristToDateStr(t.DateFin)}))
-    .filter(t=>t._d && t._f);
+    .filter(t=>t._d && t._f)
+    .sort((a,b)=>orderValue(a)-orderValue(b));
 
   const legendItems = state.projets.length
     ? state.projets.map(p=>`<span class="gantt-legend-item"><span class="gantt-legend-dot" style="background:${projectColor(p.id, projMap)}"></span>${escapeHtml(p.Nom)}</span>`).join("")
@@ -883,8 +896,11 @@ function renderGantt(){
     const preds = (t.Predecesseurs||[]).map(id=>tasksMap[id]).filter(Boolean);
     const color = projectColor(t.Projet, projMap);
     html += `<div class="gantt-row-label" data-row-id="${t.id}" style="height:${rowHeight}px;border-left:4px solid ${color};">
-      <div class="row-label-line"><span class="name-link" data-id="${t.id}">${escapeHtml(t.Nom)}</span>${t.Projet && projMap[t.Projet] ? ' <span style="color:var(--text-muted);">· '+escapeHtml(projMap[t.Projet].Nom)+'</span>':''}</div>
-      ${preds.length?`<div class="dep">🔗 ${escapeHtml(t.TypeDependance||"")} ${preds.map(p=>escapeHtml(p.Nom)).join(", ")}</div>`:""}
+      <span class="row-drag-handle" draggable="true" title="Glisser pour réordonner">⠿</span>
+      <div class="row-label-text">
+        <div class="row-label-line"><span class="name-link" data-id="${t.id}">${escapeHtml(t.Nom)}</span>${t.Projet && projMap[t.Projet] ? ' <span style="color:var(--text-muted);">· '+escapeHtml(projMap[t.Projet].Nom)+'</span>':''}</div>
+        ${preds.length?`<div class="dep">🔗 ${escapeHtml(t.TypeDependance||"")} ${preds.map(p=>escapeHtml(p.Nom)).join(", ")}</div>`:""}
+      </div>
     </div>`;
     days.forEach(d=>{
       const isWeekend = d.getDay()===0 || d.getDay()===6;
@@ -992,6 +1008,8 @@ function renderGantt(){
 
   // --- création par glisser-déposer sur une plage vide : gérée via clic simple sur cellule ci-dessus ---
 
+  wireGanttRowDrag(grid);
+
   function wireBarInteractions(bar, t, dayWidth){
     const locked = Array.isArray(t.Predecesseurs) && t.Predecesseurs.length > 0;
     let mode = null, dragging = false, startX = 0, originLeft = 0, originWidth = 0;
@@ -1061,6 +1079,80 @@ function renderGantt(){
       document.addEventListener("mousemove", onMouseMove);
       document.addEventListener("mouseup", onMouseUp);
     });
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Tri des tâches par glisser-déposer (poignée dans la colonne de gauche du
+   Gantt). L'ordre est persisté dans la colonne numérique "Ordre" de la
+   table Tache ; les tâches sans valeur (nouvelles, ou avant migration)
+   se placent par défaut selon leur id.
+   ------------------------------------------------------------------------- */
+let dragRowTaskId = null;
+
+function wireGanttRowDrag(grid){
+  const labels = Array.from(grid.querySelectorAll(".gantt-row-label[data-row-id]"));
+
+  labels.forEach(label=>{
+    const handle = label.querySelector(".row-drag-handle");
+    if(!handle) return;
+
+    handle.addEventListener("dragstart", e=>{
+      dragRowTaskId = Number(label.dataset.rowId);
+      label.classList.add("dragging-row");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(dragRowTaskId));
+    });
+    handle.addEventListener("dragend", ()=>{
+      label.classList.remove("dragging-row");
+      labels.forEach(l=>l.classList.remove("drag-over-top","drag-over-bottom"));
+      dragRowTaskId = null;
+    });
+
+    label.addEventListener("dragover", e=>{
+      if(dragRowTaskId===null) return;
+      e.preventDefault();
+      const rect = label.getBoundingClientRect();
+      const isAfter = (e.clientY - rect.top) > rect.height/2;
+      label.classList.toggle("drag-over-bottom", isAfter);
+      label.classList.toggle("drag-over-top", !isAfter);
+    });
+    label.addEventListener("dragleave", ()=>{
+      label.classList.remove("drag-over-top","drag-over-bottom");
+    });
+    label.addEventListener("drop", async e=>{
+      e.preventDefault();
+      const targetId = Number(label.dataset.rowId);
+      const isAfter = label.classList.contains("drag-over-bottom");
+      label.classList.remove("drag-over-top","drag-over-bottom");
+      const draggedId = dragRowTaskId;
+      dragRowTaskId = null;
+      if(draggedId===null || draggedId===targetId) return;
+      await reorderTasks(draggedId, targetId, isAfter);
+    });
+  });
+}
+
+async function reorderTasks(draggedId, targetId, after){
+  // ordre courant de TOUTES les tâches (pas seulement celles visibles dans le Gantt)
+  const ordered = [...state.taches].sort((a,b)=>orderValue(a)-orderValue(b));
+  const fromIdx = ordered.findIndex(x=>x.id===draggedId);
+  if(fromIdx===-1) return;
+  const [moved] = ordered.splice(fromIdx,1);
+  let targetIdx = ordered.findIndex(x=>x.id===targetId);
+  if(targetIdx===-1) targetIdx = ordered.length;
+  ordered.splice(after ? targetIdx+1 : targetIdx, 0, moved);
+
+  const rowIds = ordered.map(x=>x.id);
+  const values = ordered.map((x,i)=>(i+1)*10);
+  try{
+    await grist.docApi.applyUserActions([["BulkUpdateRecord","Tache",rowIds,{Ordre:values}]]);
+    await fetchAllData();
+    renderAll();
+    setStatus("Ordre des tâches mis à jour.", "info");
+  }catch(e){
+    setStatus("Erreur : "+e.message, "error");
+    renderGantt();
   }
 }
 
@@ -1282,4 +1374,3 @@ document.addEventListener("DOMContentLoaded", init);
 </script>
 </body>
 </html>
-
