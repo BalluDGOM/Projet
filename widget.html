@@ -135,6 +135,16 @@
     background:rgba(255,255,255,.35);cursor:ew-resize;}
   .gantt-bar.locked .gantt-bar-handle{cursor:not-allowed;}
   .gantt-today{position:absolute;top:0;bottom:0;width:2px;background:var(--danger);z-index:1;}
+  .gantt-switch{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;
+    color:var(--text-muted);cursor:pointer;user-select:none;margin-right:12px;}
+  .gantt-switch input{position:absolute;opacity:0;pointer-events:none;}
+  .gantt-switch .slider{width:32px;height:18px;border-radius:100px;background:#c9d1db;
+    position:relative;transition:background .15s;flex-shrink:0;}
+  .gantt-switch .slider::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;
+    border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.25);}
+  .gantt-switch input:checked + .slider{background:var(--primary);}
+  .gantt-switch input:checked + .slider::after{transform:translateX(14px);}
+  .gantt-toolbar-right{display:flex;align-items:center;}
 
   /* ---------- Modal ---------- */
   .modal-overlay{position:fixed;inset:0;background:rgba(20,30,50,.35);display:flex;
@@ -460,6 +470,7 @@ const state = { entites:[], utilisateurs:[], projets:[], taches:[] };
 let editingTaskId = null;
 let dragTaskId = null;
 let fixeEditOrder = [];
+let ganttHideDone = false;
 const FIXE_FIELD_IDS = ["f-debut-fixe","f-fin-fixe","f-duree-fixe"];
 
 /* =========================================================================
@@ -837,10 +848,15 @@ function renderGantt(){
   const el = document.getElementById("view-gantt");
   const projMap = byId(state.projets);
   const tasksMap = byId(state.taches);
-  const tasksWithDates = state.taches
+    const tasksWithDates = state.taches
     .map(t=>({...t, _d: gristToDateStr(t.DateDebut), _f: gristToDateStr(t.DateFin)}))
     .filter(t=>t._d && t._f)
+    .filter(t=>!(ganttHideDone && t.Statut==="Terminé"))
     .sort((a,b)=>orderValue(a)-orderValue(b));
+
+  const hiddenCount = ganttHideDone
+    ? state.taches.filter(t=>t.Statut==="Terminé" && gristToDateStr(t.DateDebut) && gristToDateStr(t.DateFin)).length
+    : 0;
 
   const legendItems = state.projets.length
     ? state.projets.map(p=>`<span class="gantt-legend-item"><span class="gantt-legend-dot" style="background:${projectColor(p.id, projMap)}"></span>${escapeHtml(p.Nom)}</span>`).join("")
@@ -850,19 +866,32 @@ function renderGantt(){
   el.innerHTML = `
     <div class="gantt-toolbar">
       <div style="font-size:12.5px;color:var(--text-muted);">
-        ${tasksWithDates.length} tâche(s) planifiée(s) sur ${state.taches.length} au total —
+        ${tasksWithDates.length} tâche(s) affichée(s) sur ${state.taches.length} au total${hiddenCount ? " ("+hiddenCount+" terminée(s) masquée(s))" : ""} —
         glissez une barre pour la déplacer, ou son bord droit pour changer sa durée.
       </div>
-      <button class="btn-primary" id="gantt-add-btn">+ Nouvelle tâche</button>
+      <div class="gantt-toolbar-right">
+        <label class="gantt-switch">
+          <input type="checkbox" id="gantt-hide-done" ${ganttHideDone ? "checked" : ""}>
+          <span class="slider"></span>
+          Masquer les tâches terminées
+        </label>
+        <button class="btn-primary" id="gantt-add-btn">+ Nouvelle tâche</button>
+      </div>
     </div>
     ${legendItems ? `<div class="gantt-legend">${legendItems}</div>` : ""}
     <div class="gantt-wrap" id="gantt-wrap"></div>
   `;
   document.getElementById("gantt-add-btn").addEventListener("click", ()=>openTaskModal(null));
+  document.getElementById("gantt-hide-done").addEventListener("change", e=>{
+    ganttHideDone = e.target.checked;
+    renderGantt();
+  });
 
   const wrap = document.getElementById("gantt-wrap");
   if(tasksWithDates.length===0){
-    wrap.innerHTML = '<div class="empty-hint">Aucune tâche avec des dates calculées pour le moment (renseignez une date fixée ou un prédécesseur sur une tâche).</div>';
+    wrap.innerHTML = hiddenCount
+      ? '<div class="empty-hint">Toutes les tâches planifiées sont terminées et donc masquées.</div>'
+      : '<div class="empty-hint">Aucune tâche avec des dates calculées pour le moment (renseignez une date fixée ou un prédécesseur sur une tâche).</div>';
     return;
   }
 
