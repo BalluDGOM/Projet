@@ -147,6 +147,7 @@
   .gantt-switch input:checked + .slider{background:var(--primary);}
   .gantt-switch input:checked + .slider::after{transform:translateX(14px);}
   .gantt-toolbar-right{display:flex;align-items:center;}
+  .gantt-wrap.panning, .gantt-wrap.panning *{cursor:grabbing !important;user-select:none;}
 
   /* ---------- Modal ---------- */
   .modal-overlay{position:fixed;inset:0;background:rgba(20,30,50,.35);display:flex;
@@ -471,7 +472,7 @@ const state = { entites:[], utilisateurs:[], projets:[], taches:[] };
 let editingTaskId = null;
 let dragTaskId = null;
 let fixeEditOrder = [];
-let ganttHideDone = true;
+let ganttHideDone = false;
 const FIXE_FIELD_IDS = ["f-debut-fixe","f-fin-fixe","f-duree-fixe"];
 
 /* =========================================================================
@@ -1104,6 +1105,7 @@ function renderGantt(){
   // --- création par glisser-déposer sur une plage vide : gérée via clic simple sur cellule ci-dessus ---
 
   wireGanttRowDrag(grid);
+  wireGanttPan(wrap);
 
   function wireBarInteractions(bar, t, dayWidth){
     const locked = Array.isArray(t.Predecesseurs) && t.Predecesseurs.length > 0;
@@ -1175,6 +1177,50 @@ function renderGantt(){
       document.addEventListener("mouseup", onMouseUp);
     });
   }
+}
+
+function wireGanttPan(wrap){
+  const scroller = document.querySelector("main"); // conteneur du défilement vertical
+  let moved = false, suppressClick = false;
+  let startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+  function onMove(e){
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    if(!moved){
+      if(Math.abs(dx) < 4 && Math.abs(dy) < 4) return; // seuil : sinon c'est un clic
+      moved = true;
+      wrap.classList.add("panning");
+    }
+    wrap.scrollLeft = startLeft - dx;
+    scroller.scrollTop = startTop - dy;
+    e.preventDefault();
+  }
+  function onUp(){
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    wrap.classList.remove("panning");
+    if(moved){
+      suppressClick = true; // évite d'ouvrir la modale de création en fin de glissement
+      setTimeout(()=>{ suppressClick = false; }, 50);
+    }
+  }
+
+  wrap.addEventListener("mousedown", e=>{
+    if(e.button !== 0) return;
+    // on ne détourne pas les interactions existantes : barres, noms, poignées de tri
+    if(e.target.closest(".gantt-bar, .name-link, .row-drag-handle")) return;
+    moved = false;
+    startX = e.clientX; startY = e.clientY;
+    startLeft = wrap.scrollLeft; startTop = scroller.scrollTop;
+    e.preventDefault(); // pas de sélection de texte pendant le glissement
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+
+  // en phase de capture : passe avant le clic des cellules
+  wrap.addEventListener("click", e=>{
+    if(suppressClick){ e.stopPropagation(); e.preventDefault(); }
+  }, true);
 }
 
 /* -------------------------------------------------------------------------
