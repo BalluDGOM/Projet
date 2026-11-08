@@ -8,7 +8,7 @@
   :root{
     --bg:#f4f6f8;
     --surface:#ffffff;
-    --border:#dfe4ea;
+    --border:#dfe4ea; 
     --text:#1f2933;
     --text-muted:#697586;
     --primary:#2f5bea;
@@ -42,6 +42,8 @@
     border-bottom:1px solid var(--border);display:none;}
   #status-bar.error{color:var(--danger);background:#fdeeee;display:block;}
   #status-bar.info{display:block;}
+  #status-bar{white-space:pre-wrap;}
+  #status-bar.warn{color:#8a5a00;background:#fff6e0;display:block;}
 
   main{flex:1;overflow:auto;padding:16px;}
   .view{display:none;}
@@ -240,7 +242,7 @@
       </div>
     </div>
 
-    <h3>Dates / durée fixées (si pas de dépendance ci-dessus)</h3>
+    <h3>Dates / durée fixées (prioritaires sur les dépendances)</h3>
     <div class="field-row">
       <div class="field">
         <label>Date de début fixée</label>
@@ -255,7 +257,7 @@
         <input type="number" id="f-duree-fixe" min="0">
       </div>
     </div>
-    <div class="hint" id="f-fixe-hint">Renseignez au maximum deux de ces trois valeurs : la troisième sera calculée automatiquement par Grist.</div>
+    <div class="hint" id="f-fixe-hint">Les valeurs fixées sont prioritaires sur les dépendances. Renseignez au maximum deux de ces trois valeurs : la troisième sera calculée automatiquement.</div>
 
     <div class="field" style="margin-top:14px;">
       <label>Utilisateurs affectés</label>
@@ -312,14 +314,22 @@ const FORMULA_DUREE =
 const FORMULA_DATE_DEBUT =
 `import datetime
 
-dec = $DecalageJours or 0
-duree = $DureeFixe or $Duree or 1
+# 1. Priorité absolue : date de début fixée
+if $DateDebutFixe:
+    return $DateDebutFixe
 
-# Conversion propre des prédécesseurs en itérable
+dec = $DecalageJours or 0
+# $Duree = durée fixée, ou déduite des deux dates fixées
+duree = $Duree or 1
+t = $TypeDependance or "Fin/Début"
+
+# 2. Date de fin fixée + durée connue : on remonte depuis la fin
+if $DateFinFixe and $Duree:
+    return $DateFinFixe - datetime.timedelta(days=$Duree - 1)
+
+# 3. Sinon, calcul par dépendance
 preds = []
 if $Predecesseurs:
-    # Si c'est une RecordList (RefList), on itère dessus
-    # Sinon c'est un Record simple (Reference)
     try:
         preds = list($Predecesseurs)
     except TypeError:
@@ -328,50 +338,52 @@ if $Predecesseurs:
 dates_calculees = []
 
 for pred in preds:
-    # Sécurité : vérifie que 'pred' est bien un objet Record et pas une liste/vide
     if not pred or isinstance(pred, (list, tuple)):
         continue
-        
-    t = $TypeDependance
 
-    # 1. Début/Début
     if t == "Début/Début" and pred.DateDebut:
         dates_calculees.append(pred.DateDebut + datetime.timedelta(days=dec))
 
-    # 2. Fin/Début
     elif t == "Fin/Début" and pred.DateFin:
         dates_calculees.append(pred.DateFin + datetime.timedelta(days=dec + 1))
 
-    # 3. Fin/Fin
     elif t == "Fin/Fin" and pred.DateFin:
         date_fin_imposee = pred.DateFin - datetime.timedelta(days=dec)
         dates_calculees.append(date_fin_imposee - datetime.timedelta(days=duree - 1))
 
-    # 4. Début/Fin
     elif t == "Début/Fin" and pred.DateDebut:
         date_fin_imposee = pred.DateDebut - datetime.timedelta(days=dec)
         dates_calculees.append(date_fin_imposee - datetime.timedelta(days=duree - 1))
 
-# On retient la date la plus tardive (la plus contraignante)
 if dates_calculees:
-    return max(dates_calculees)
+    debut = max(dates_calculees)
+    # une fin fixée ne peut pas être précédée par un début calculé plus tardif
+    if $DateFinFixe and debut > $DateFinFixe:
+        return $DateFinFixe
+    return debut
 
-# Fallbacks
-if $DateDebutFixe:
-    return $DateDebutFixe
-
-if $DateFinFixe and duree:
-    return $DateFinFixe - datetime.timedelta(days=duree - 1)
+# 4. Fallback : fin fixée seule
+if $DateFinFixe:
+    return $DateFinFixe
 
 return None`
 
 const FORMULA_DATE_FIN =
 `import datetime
 
-dec = $DecalageJours or 0
-duree = $DureeFixe or $Duree or 1
+# 1. Priorité absolue : date de fin fixée
+if $DateFinFixe:
+    return $DateFinFixe
 
-# Conversion propre des prédécesseurs (RecordList ou Reference)
+dec = $DecalageJours or 0
+duree = $Duree or 1
+t = $TypeDependance or "Fin/Début"
+
+# 2. Date de début fixée : fin = début + durée - 1
+if $DateDebutFixe:
+    return $DateDebutFixe + datetime.timedelta(days=duree - 1)
+
+# 3. Sinon, calcul par dépendance
 preds = []
 if $Predecesseurs:
     try:
@@ -384,38 +396,27 @@ dates_calculees = []
 for pred in preds:
     if not pred or isinstance(pred, (list, tuple)):
         continue
-        
-    t = $TypeDependance
 
-    # 1. Fin/Fin : La date de fin dépend de la fin du prédécesseur
     if t == "Fin/Fin" and pred.DateFin:
         dates_calculees.append(pred.DateFin + datetime.timedelta(days=dec))
 
-    # 2. Début/Fin : La date de fin dépend du début du prédécesseur
     elif t == "Début/Fin" and pred.DateDebut:
         dates_calculees.append(pred.DateDebut + datetime.timedelta(days=dec))
 
-    # 3. Fin/Début (si applicable) : Fin = Début du prédécesseur + décalage + durée
     elif t == "Fin/Début" and pred.DateFin:
         dates_calculees.append(pred.DateFin + datetime.timedelta(days=dec + duree))
 
-    # 4. Début/Début (si applicable) : Fin = Début du prédécesseur + décalage + durée - 1
     elif t == "Début/Début" and pred.DateDebut:
         dates_calculees.append(pred.DateDebut + datetime.timedelta(days=dec + duree - 1))
 
-# On retient la date de fin la plus tardive parmi tous les prédécesseurs
 if dates_calculees:
     return max(dates_calculees)
 
-# Fallbacks si aucun prédécesseur valide
-if $DateFinFixe:
-    return $DateFinFixe
-
-if $DateDebut and duree:
+# 4. Fallback : début calculé + durée
+if $DateDebut:
     return $DateDebut + datetime.timedelta(days=duree - 1)
 
 return None`
-
 // mapping colonne calculée -> colonne "fixée" correspondante (pour migration d'un ancien schéma)
 const FIXE_MAP = { DateDebut: "DateDebutFixe", DateFin: "DateFinFixe", Duree: "DureeFixe" };
 
@@ -493,16 +494,52 @@ function normalizeRefList(v){
   }
   return [];
 }
+const diagnostics = [];
+function describeValue(v){ try{ return JSON.stringify(v); }catch(_){ return String(v); } }
+function diag(msg){
+  if(!diagnostics.includes(msg)){ diagnostics.push(msg); console.warn("[Gestion de projet] "+msg); }
+}
+function errText(e){
+  if(!e) return "erreur inconnue";
+  return (e.message || String(e)) + (e.step ? "  (étape : "+e.step+")" : "");
+}
+function reportError(step, e){
+  console.error("[Gestion de projet] "+step, e);
+  setStatus("Erreur — "+step+" : "+errText(e), "error");
+}
+async function runStep(label, fn){
+  try{ return await fn(); }
+  catch(e){ if(e && typeof e==="object" && !e.step) e.step = label; throw e; }
+}
+
+const DATE_COLS = ["DateDebut","DateFin","DateDebutFixe","DateFinFixe"];
+function isValidGristDate(v){
+  return typeof v==="number" && isFinite(v) && !isNaN(new Date(v*1000).getTime());
+}
+// Nettoie une tâche : toute date invalide devient null et est signalée avec précision
+function sanitizeTaskDates(t){
+  DATE_COLS.forEach(c=>{
+    const v = t[c];
+    if(v===null || v===undefined || v===0 || v===false || v===""){ t[c] = null; return; }
+    if(isValidGristDate(v)) return;
+    diag(`Tâche #${t.id} « ${t.Nom||"(sans nom)"} » — colonne ${c} : valeur non reconnue ${describeValue(v)} (erreur de formule ou texte dans une colonne Date).`);
+    t[c] = null;
+  });
+}
+
 function dateToGrist(str){
   if(!str) return null;
-  return Math.floor(new Date(str+"T00:00:00Z").getTime()/1000);
+  const ms = new Date(str+"T00:00:00Z").getTime();
+  return isNaN(ms) ? null : Math.floor(ms/1000);
 }
 function gristToDateStr(v){
-  if(v===null || v===undefined || v===0 || v===false) return "";
+  if(v===null || v===undefined || v===0 || v===false || v==="") return "";
+  if(!isValidGristDate(v)){ diag("Date invalide ignorée : "+describeValue(v)); return ""; }
   return new Date(v*1000).toISOString().slice(0,10);
 }
 function addDays(dateStr, n){
   const d = new Date(dateStr+"T00:00:00Z");
+  if(isNaN(d.getTime())) throw new Error("addDays : date invalide « "+dateStr+" »");
   d.setUTCDate(d.getUTCDate()+n);
   return d.toISOString().slice(0,10);
 }
@@ -540,38 +577,72 @@ function setStatus(msg, type){
 /* =========================================================================
    VÉRIFICATION / CRÉATION DU SCHÉMA GRIST (+ migration des champs calculés)
    ========================================================================= */
-function colInfo(c){
+function colInfo(c, forModify){
   return {
     type: c.type,
-    label: c.label,
+    // ne JAMAIS renvoyer le label en modification : Grist renommerait le colId
+    ...(forModify ? {} : {label: c.label}),
+    untieColIdFromLabel: true,
     ...(c.widgetOptions ? {widgetOptions:c.widgetOptions} : {}),
     ...(c.formula !== undefined ? {isFormula:true, formula:c.formula} : {})
   };
 }
 
-async function ensureSchema(){
-  setStatus("Vérification de la structure du document…", "info");
+async function loadSchemaMeta(){
   const [tablesMeta, colsMeta] = await Promise.all([
     grist.docApi.fetchTable("_grist_Tables"),
     grist.docApi.fetchTable("_grist_Tables_column")
   ]);
-
   const tableRowIdByName = {};
   tablesMeta.tableId.forEach((name, i)=>{ tableRowIdByName[name] = tablesMeta.id[i]; });
-
-  const existingColsByTable = {}; // tableRowId -> Map(colId -> {isFormula, formula, type})
+  const existingColsByTable = {};
   colsMeta.parentId.forEach((parentRowId, i)=>{
     if(!existingColsByTable[parentRowId]) existingColsByTable[parentRowId] = new Map();
     existingColsByTable[parentRowId].set(colsMeta.colId[i], {
+      rowId: colsMeta.id[i],
+      label: colsMeta.label[i],
       isFormula: colsMeta.isFormula[i],
       formula: colsMeta.formula[i],
       type: colsMeta.type[i]
     });
   });
+  return {tableRowIdByName, existingColsByTable};
+}
 
+async function ensureSchema(){
+  setStatus("Vérification de la structure du document…", "info");
+  let {tableRowIdByName, existingColsByTable} = await loadSchemaMeta();
+
+  // --- 0. Réparation : colonnes dont le colId a dérivé du libellé ---
+  const norm = s => String(s||"").trim().toLowerCase();
+  const renameActions = [];
+  const renamed = [];
+  for(const tableName of Object.keys(SCHEMA)){
+    if(!(tableName in tableRowIdByName)) continue;
+    const existing = existingColsByTable[tableRowIdByName[tableName]] || new Map();
+    const expectedIds = new Set(SCHEMA[tableName].map(c=>c.id));
+    SCHEMA[tableName].forEach(c=>{
+      if(existing.has(c.id)) return;
+      const candidates = [...existing.entries()]
+        .filter(([id,info])=>!expectedIds.has(id) && !id.startsWith("gristHelper_") && norm(info.label)===norm(c.label))
+        .sort((a,b)=>a[1].rowId-b[1].rowId); // la plus ancienne = l'originale
+      if(!candidates.length) return;
+      const [oldId, info] = candidates[0];
+      renameActions.push(["RenameColumn", tableName, oldId, c.id]);
+      renamed.push(`${tableName}.${oldId} → ${c.id}`);
+      existing.delete(oldId);
+      existing.set(c.id, info);
+    });
+  }
+  if(renameActions.length){
+    await runStep("Renommage des colonnes dérivées", ()=>grist.docApi.applyUserActions(renameActions));
+    ({tableRowIdByName, existingColsByTable} = await loadSchemaMeta()); // formules réécrites par Grist
+  }
+
+  // --- 1. Création / mise à jour ---
   const addActions = [];
   const convertActions = [];
-  const migrations = []; // {table, from, to} : recopier les anciennes valeurs avant conversion en formule
+  const migrations = [];
 
   for(const tableName of Object.keys(SCHEMA)){
     const cols = SCHEMA[tableName];
@@ -579,32 +650,28 @@ async function ensureSchema(){
       addActions.push(["AddTable", tableName, cols.map(c=>({id:c.id, ...colInfo(c)}))]);
       continue;
     }
-    const rowId = tableRowIdByName[tableName];
-    const existing = existingColsByTable[rowId] || new Map();
+    const existing = existingColsByTable[tableRowIdByName[tableName]] || new Map();
     cols.forEach(c=>{
       if(!existing.has(c.id)){
         addActions.push(["AddColumn", tableName, c.id, colInfo(c)]);
-      } else if(c.formula !== undefined){
-        const ex = existing.get(c.id);
+        return;
+      }
+      const ex = existing.get(c.id);
+      if(c.formula !== undefined){
         if(!ex.isFormula){
           if(FIXE_MAP[c.id]) migrations.push({table:tableName, from:c.id, to:FIXE_MAP[c.id]});
-          convertActions.push(["ModifyColumn", tableName, c.id, colInfo(c)]);
+          convertActions.push(["ModifyColumn", tableName, c.id, colInfo(c, true)]);
         } else if(ex.formula !== c.formula || ex.type !== c.type){
-          convertActions.push(["ModifyColumn", tableName, c.id, colInfo(c)]);
+          convertActions.push(["ModifyColumn", tableName, c.id, colInfo(c, true)]);
         }
-      } else {
-        // Colonne non calculée : on corrige aussi une dérive de type
-        // (ex. "Predecesseurs" qui doit être RefList:Tache et non Ref:Tache).
-        const ex = existing.get(c.id);
-        if(ex.type !== c.type){
-          convertActions.push(["ModifyColumn", tableName, c.id, colInfo(c)]);
-        }
+      } else if(ex.type !== c.type){
+        convertActions.push(["ModifyColumn", tableName, c.id, colInfo(c, true)]);
       }
     });
   }
 
   if(addActions.length){
-    await grist.docApi.applyUserActions(addActions);
+    await runStep("Création des colonnes manquantes", ()=>grist.docApi.applyUserActions(addActions));
   }
 
   if(migrations.length){
@@ -615,37 +682,26 @@ async function ensureSchema(){
       const data = await grist.docApi.fetchTable(tableName);
       byTable[tableName].forEach(m=>{
         if(!data[m.from]) return;
-        const colValues = {};
-        colValues[m.to] = data[m.from];
-        bulkActions.push(["BulkUpdateRecord", tableName, data.id, colValues]);
+        bulkActions.push(["BulkUpdateRecord", tableName, data.id, {[m.to]: data[m.from]}]);
       });
     }
-    if(bulkActions.length) await grist.docApi.applyUserActions(bulkActions);
+    if(bulkActions.length) await runStep("Migration des anciennes valeurs", ()=>grist.docApi.applyUserActions(bulkActions));
   }
 
   if(convertActions.length){
-    await grist.docApi.applyUserActions(convertActions);
+    await runStep("Mise à jour des formules", ()=>grist.docApi.applyUserActions(convertActions));
   }
 
-  // Migration : d'anciennes versions de ce widget contenaient une erreur et
-  // écrivaient le prédécesseur dans une colonne "Predecesseur" (sans "s")
-  // au lieu de "Predecesseurs". Si cette ancienne colonne existe encore et
-  // contient des valeurs non reprises dans "Predecesseurs", on les recopie
-  // pour ne pas perdre les dépendances déjà saisies (et faire réapparaître
-  // les flèches correspondantes dans le Gantt).
+  // Migration de l'ancienne colonne "Predecesseur" -> "Predecesseurs"
   let migratedPreds = 0;
   if("Tache" in tableRowIdByName){
     const tacheData = await grist.docApi.fetchTable("Tache");
     if(tacheData.Predecesseur){
-      const rowIds = [];
-      const values = [];
+      const rowIds = [], values = [];
       tacheData.id.forEach((id, i)=>{
         const oldVal = tacheData.Predecesseur[i];
         const newVal = tacheData.Predecesseurs ? normalizeRefList(tacheData.Predecesseurs[i]) : [];
-        if(oldVal && newVal.length===0){
-          rowIds.push(id);
-          values.push(["L", oldVal]);
-        }
+        if(oldVal && newVal.length===0){ rowIds.push(id); values.push(["L", oldVal]); }
       });
       if(rowIds.length){
         await grist.docApi.applyUserActions([["BulkUpdateRecord","Tache",rowIds,{Predecesseurs:values}]]);
@@ -656,6 +712,7 @@ async function ensureSchema(){
 
   const total = addActions.length + convertActions.length;
   const parts = [];
+  if(renamed.length) parts.push("Colonnes renommées : "+renamed.join(", "));
   if(total) parts.push(total+" élément(s) de structure créé(s)/mis à jour");
   if(migratedPreds) parts.push(migratedPreds+" dépendance(s) migrée(s) depuis l'ancienne colonne");
   setStatus(parts.length ? parts.join(" — ")+"." : "Structure du document conforme.", "info");
@@ -666,10 +723,10 @@ async function ensureSchema(){
    ========================================================================= */
 async function fetchAllData(){
   const [ent, usr, prj, tsk] = await Promise.all([
-    grist.docApi.fetchTable("Entites"),
-    grist.docApi.fetchTable("Utilisateurs"),
-    grist.docApi.fetchTable("Projet"),
-    grist.docApi.fetchTable("Tache")
+    runStep("Lecture de la table Entites",       ()=>grist.docApi.fetchTable("Entites")),
+    runStep("Lecture de la table Utilisateurs",  ()=>grist.docApi.fetchTable("Utilisateurs")),
+    runStep("Lecture de la table Projet",        ()=>grist.docApi.fetchTable("Projet")),
+    runStep("Lecture de la table Tache",         ()=>grist.docApi.fetchTable("Tache"))
   ]);
   state.entites = tableToRows(ent);
   state.utilisateurs = tableToRows(usr);
@@ -679,12 +736,21 @@ async function fetchAllData(){
     Utilisateurs: normalizeRefList(t.Utilisateurs),
     Predecesseurs: normalizeRefList(t.Predecesseurs)
   }));
+  state.taches.forEach(sanitizeTaskDates);
 }
 
 function renderAll(){
-  renderDashboard();
-  renderKanban();
-  renderGantt();
+  [["Tableau de bord", renderDashboard], ["Kanban", renderKanban], ["Gantt", renderGantt]]
+    .forEach(([name, fn])=>{
+      try{ fn(); }catch(e){ reportError("Affichage de la vue « "+name+" »", e); }
+    });
+  showDiagnostics();
+}
+function showDiagnostics(){
+  if(!diagnostics.length) return;
+  const shown = diagnostics.slice(0,5).join("\n");
+  const more = diagnostics.length>5 ? "\n… et "+(diagnostics.length-5)+" autre(s) (voir la console, F12)." : "";
+  setStatus("⚠ "+diagnostics.length+" donnée(s) à corriger dans Grist :\n"+shown+more, "warn");
 }
 
 /* =========================================================================
@@ -838,7 +904,7 @@ async function updateTaskStatus(taskId, statut){
     await grist.docApi.applyUserActions([["UpdateRecord","Tache",taskId,{Statut:statut}]]);
     await fetchAllData();
     renderAll();
-  }catch(e){ setStatus("Erreur : "+e.message, "error"); }
+  }catch(e){ reportError("Mise à jour de la tâche", e)}
 }
 
 /* =========================================================================
@@ -1088,7 +1154,7 @@ function renderGantt(){
         renderAll();
         setStatus("Planification mise à jour.", "info");
       }catch(err){
-        setStatus("Erreur : "+err.message, "error");
+        reportError("wireBarInteractions", e)
         renderGantt();
       }
     }
@@ -1181,6 +1247,7 @@ async function reorderTasks(draggedId, targetId, after){
     setStatus("Ordre des tâches mis à jour.", "info");
   }catch(e){
     setStatus("Erreur : "+e.message, "error");
+    reportError("reorderTasks", e)
     renderGantt();
   }
 }
@@ -1324,7 +1391,7 @@ async function saveTaskFromModal(){
     renderAll();
     setStatus("Tâche enregistrée.", "info");
   }catch(e){
-    setStatus("Erreur lors de l'enregistrement : "+e.message, "error");
+    reportError("Erreur lors de l'enregistrement", e)
   }
 }
 
@@ -1338,7 +1405,7 @@ async function deleteTaskFromModal(){
     renderAll();
     setStatus("Tâche supprimée.", "info");
   }catch(e){
-    setStatus("Erreur lors de la suppression : "+e.message, "error");
+    reportError("Erreur lors de la suppression", e)
   }
 }
 
@@ -1367,7 +1434,7 @@ function wireUi(){
       await ensureSchema();
       await fetchAllData();
       renderAll();
-    }catch(e){ setStatus("Erreur : "+e.message, "error"); }
+    }catch(e){ reportError("wireUi", e) }
   });
 
   document.getElementById("btn-cancel").addEventListener("click", closeTaskModal);
@@ -1387,16 +1454,18 @@ function wireUi(){
    ========================================================================= */
 async function init(){
   wireUi();
+  window.addEventListener("error", e=>reportError("Erreur JavaScript", e.error || e.message));
+  window.addEventListener("unhandledrejection", e=>reportError("Promesse rejetée", e.reason));
   try{
     grist.ready({ requiredAccess: "full" });
-    await ensureSchema();
-    await fetchAllData();
+    await runStep("Vérification de la structure", ensureSchema);
+    await runStep("Chargement des données", fetchAllData);
     renderAll();
   }catch(e){
-    setStatus("Erreur d'initialisation : "+e.message, "error");
-    console.error(e);
+    reportError("Initialisation", e);
   }
 }
+
 
 document.addEventListener("DOMContentLoaded", init);
 })();
